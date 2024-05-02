@@ -9,25 +9,31 @@ class ESGenerator:
     """
     Main generator Object where other Generators inherit from
     """
-    def __init__(self, host='localhost',
-                 port=9200,
-                 es=None,
-                 index=None,
-                 type_=None,
-                 id_=None,
-                 body=None,
-                 source=True,
-                 excludes=None,
-                 includes=None,
-                 headless=False,
-                 chunksize=1000,
-                 timeout=10,
-                 verbose=True,
-                 slice_=None):
+
+    def __init__(
+        self,
+        host="localhost",
+        port=9200,
+        use_ssl=False,
+        es=None,
+        index=None,
+        type_=None,
+        id_=None,
+        body=None,
+        source=True,
+        excludes=None,
+        includes=None,
+        headless=False,
+        chunksize=1000,
+        timeout=10,
+        verbose=True,
+        slice_=None,
+    ):
         """
         Construct a new ESGenerator Object.
         :param host: Elasticsearch host to use, default is localhost
         :param port: Elasticsearch port to use, default is 9200
+        :param use_ssl: Use SSL, default is False
         :param index: Elasticsearch Index to use, optional, if no parameter given, ESGenerator uses ALL the indices
         :param es: Don't use the host/port/timeout setting, use your own elasticsearch.Elasticsearch() Object
         :param type_: Elasticsearch doc_type to use, optional, deprecated after Elasticsearch>=7.0.0
@@ -48,9 +54,14 @@ class ESGenerator:
             if "://" in host:  # we don't want the hostname to start with the protocoll
                 host = urllib.parse.urlparse(host).hostname
             self.es = elasticsearch_dsl.connections.create_connection(
-                               host=host, port=port, timeout=timeout,
-                               max_retries=10, retry_on_timeout=True,
-                               http_compress=True)
+                host=host,
+                port=port,
+                use_ssl=use_ssl,
+                timeout=timeout,
+                max_retries=10,
+                retry_on_timeout=True,
+                http_compress=True,
+            )
         self.id_ = id_
         self.source = source
         self.chunksize = chunksize
@@ -88,7 +99,7 @@ class ESGenerator:
             if self.source:
                 meta["_source"] = hit.to_dict()
             else:
-                meta["_source"] = {}     # @BH: necessarry?
+                meta["_source"] = {}  # @BH: necessarry?
 
             return meta
 
@@ -111,18 +122,19 @@ class ESGenerator:
         main generator function which harvests from the Elasticsearch-Cluster after all init and argument stuff is done
         """
         if self.id_:
-            s = elasticsearch_dsl.Document.get(using=self.es,
-                                               index=self.index,
-                                               id=self.id_,
-                                               _source_excludes=self.source_excludes,
-                                               _source_includes=self.source_includes,
-                                               _source=self.source)
+            s = elasticsearch_dsl.Document.get(
+                using=self.es,
+                index=self.index,
+                id=self.id_,
+                _source_excludes=self.source_excludes,
+                _source_includes=self.source_includes,
+                _source=self.source,
+            )
             yield self.return_doc(s)
             return
-        s = elasticsearch_dsl.Search(using=self.es,
-                                     index=self.index,
-                                     doc_type=self.type_).source(excludes=self.source_excludes,
-                                                                    includes=self.source_includes)
+        s = elasticsearch_dsl.Search(
+            using=self.es, index=self.index, doc_type=self.type_
+        ).source(excludes=self.source_excludes, includes=self.source_includes)
         if self.body:
             s = s.update_from_dict(self.body)
         if self.verbose:
@@ -130,11 +142,13 @@ class ESGenerator:
         if self.slice_:
             hits = s[self.slice_].execute()
         else:
-            hits = s.params(scroll='12h', size=self.chunksize).scan()  # in scroll context, size = pagesize, still all records will be returned
+            hits = s.params(
+                scroll="12h", size=self.chunksize
+            ).scan()  # in scroll context, size = pagesize, still all records will be returned
         for n, hit in enumerate(hits):
             yield self.return_doc(hit)
-            if self.verbose and ((n+1) % self.chunksize == 0 or n+1 == hits_total):
-                helperscripts.eprint("{}/{}".format(n+1, hits_total))
+            if self.verbose and ((n + 1) % self.chunksize == 0 or n + 1 == hits_total):
+                helperscripts.eprint("{}/{}".format(n + 1, hits_total))
 
 
 class IDFile(ESGenerator):
@@ -142,8 +156,8 @@ class IDFile(ESGenerator):
     wrapper for esgenerator() to submit a list of ids or a file with ids
     to reduce the searchwindow on
     """
-    
-    def __init__(self,  idfile, missing_behaviour='print', **kwargs):
+
+    def __init__(self, idfile, missing_behaviour="print", **kwargs):
         """
         Creates a new IDFile Object
         :param idfile: the path of the file containing the IDs or an iterable containing the IDs
@@ -151,8 +165,10 @@ class IDFile(ESGenerator):
         """
         super().__init__(**kwargs)
         self.idfile = idfile  # string containing the path to the idfile, or an iterable containing all the IDs
-        self.ids = []  # an iterable containing all the IDs from idfile, going to be reduced during runtime
-        self.missing_behaviour = missing_behaviour # what to do with missing records? print or yield an dict containing the ID? default is print
+        self.ids = (
+            []
+        )  # an iterable containing all the IDs from idfile, going to be reduced during runtime
+        self.missing_behaviour = missing_behaviour  # what to do with missing records? print or yield an dict containing the ID? default is print
         self.read_file()
 
     def read_file(self):
@@ -165,7 +181,11 @@ class IDFile(ESGenerator):
             with open(self.idfile, "r") as inp:
                 for ppn in inp:
                     ids_set.add(ppn.rstrip())
-        elif helperscripts.isiter(self.idfile) and not isinstance(self.idfile, str) and not helperscripts.isfile(self.idfile):
+        elif (
+            helperscripts.isiter(self.idfile)
+            and not isinstance(self.idfile, str)
+            and not helperscripts.isfile(self.idfile)
+        ):
             for ppn in self.idfile:
                 ids_set.add(ppn.rstrip())
         else:
@@ -181,10 +201,10 @@ class IDFile(ESGenerator):
         error-print every missing ids
         """
         for item in missing:
-            if self.missing_behaviour == 'print':
+            if self.missing_behaviour == "print":
                 helperscripts.eprint("ID {} not found".format(item))
-            elif self.missing_behaviour == 'yield':
-                yield {"_id": item, 'found': False}
+            elif self.missing_behaviour == "yield":
+                yield {"_id": item, "found": False}
 
     def generator(self):
         """
@@ -196,11 +216,21 @@ class IDFile(ESGenerator):
         missing = []  # an iterable containing missing ids
         while len(self.ids) > 0:
             if self.body:
-                ms = elasticsearch_dsl.MultiSearch(using=self.es, index=self.index, doc_type=self.type_)  # setting up MultiSearch
-                this_iter_ids = self.ids[:self.chunksize]  # an ID List per iteration, so we can check if all the IDs of this chunksize are found at the end.
+                ms = elasticsearch_dsl.MultiSearch(
+                    using=self.es, index=self.index, doc_type=self.type_
+                )  # setting up MultiSearch
+                this_iter_ids = self.ids[
+                    : self.chunksize
+                ]  # an ID List per iteration, so we can check if all the IDs of this chunksize are found at the end.
                 for _id in this_iter_ids:  # add a search per ID
-                    ms = ms.add(elasticsearch_dsl.Search().source(excludes=self.source_excludes,
-                                                                  includes=self.source_includes).from_dict(self.body).query("match", _id=_id))
+                    ms = ms.add(
+                        elasticsearch_dsl.Search()
+                        .source(
+                            excludes=self.source_excludes, includes=self.source_includes
+                        )
+                        .from_dict(self.body)
+                        .query("match", _id=_id)
+                    )
                 responses = ms.execute()
                 for response in responses:
                     for hit in response:
@@ -219,17 +249,21 @@ class IDFile(ESGenerator):
                     del this_iter_ids[this_iter_ids.index(_id)]
             else:
                 try:
-                    s = elasticsearch_dsl.Document.mget(docs=self.ids[:self.chunksize],
-                                                        using=self.es,
-                                                        index=self.index,
-                                                        _source_excludes=self.source_excludes,
-                                                        _source_includes=self.source_includes,
-                                                        _source=self.source,
-                                                        missing='raise')
+                    s = elasticsearch_dsl.Document.mget(
+                        docs=self.ids[: self.chunksize],
+                        using=self.es,
+                        index=self.index,
+                        _source_excludes=self.source_excludes,
+                        _source_includes=self.source_includes,
+                        _source=self.source,
+                        missing="raise",
+                    )
                 except elasticsearch.exceptions.NotFoundError as e:
-                    for doc in e.info['docs']:  # we got some missing ids and harvest the missing ids from the Elasticsearch NotFoundError Exception
-                        missing.append(doc['_id'])
-                        del self.ids[self.ids.index(doc['_id'])]
+                    for doc in e.info[
+                        "docs"
+                    ]:  # we got some missing ids and harvest the missing ids from the Elasticsearch NotFoundError Exception
+                        missing.append(doc["_id"])
+                        del self.ids[self.ids.index(doc["_id"])]
                 else:  # only gets called if we don't run into an exception
                     for hit in s:
                         _id = hit.meta.to_dict()["id"]
@@ -250,6 +284,7 @@ class IDFileConsume(IDFile):
     """
     same class like IDFile, but here we overwrite the write_file and read_file functions for missing-ID-handling purposes
     """
+
     def __init__(self, **kwargs):
         """
         Creates a new IDFileConsume Object
@@ -275,7 +310,7 @@ class IDFileConsume(IDFile):
             with open(self.idfile, "w") as outp:
                 for item in missing:
                     print(item, file=outp)
-                    if self.missing_behaviour == 'yield':
-                        yield {"_id": item, 'found': False}
+                    if self.missing_behaviour == "yield":
+                        yield {"_id": item, "found": False}
         else:  # no ids missing in the cluster? alright, we clean up
             os.remove(self.idfile)

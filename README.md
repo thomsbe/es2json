@@ -24,6 +24,7 @@ optional arguments:
                                     default: None → queries across all available indices
                         type      - elasticsearch doctype to use (optional)
                         id        - identifier of one specific document to query (optional)
+  -use-ssl              use https instead of http
   -ign-source           return the Document or just the Elasticsearch-Metadata
   -size N[:M]           just return the first n-Records of the search,
                         or return a python slice, e.g. 2:10 returns a list
